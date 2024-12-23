@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Cookie Reader</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 11px;
+      padding-top: 16px;
+      width: 180px;
+      font-family: monospace, monospace;
+      background-color: #121212;
+      color: #e0e0e0;
+    }
+    button {
+      width: 100%;
+      padding: 11px;
+      margin-bottom: 11px;
+      background-color: #333333;
+      color: #e0e0e0;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #555555;
+    }
+    #status {
+      color: #90EE90;
+      text-align: center;
+      padding-top: 5px;
+    }
+    #error {
+      color: #ff6347;
+      text-align: center;
+      padding-top: 7px;
+    }
+    .cookie {
+      position: absolute;
+      pointer-events: none;
+      opacity: 0.6;
+      z-index: 9999;
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <button id="getCookies">Собрать cookie</button>
+  <button id="copyToClipboard">Копировать</button>
+  <div id="status"></div>
+  <div id="error"></div>
+  <script src="pako.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
