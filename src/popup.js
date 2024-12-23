@@ -1,53 +1,106 @@
-// Constants
-const DOM_ELEMENTS = {
-  status: document.getElementById('status'),
-  error: document.getElementById('error'),
-  getCookies: document.getElementById('getCookies'),
-  copyToClipboard: document.getElementById('copyToClipboard')
+// Types and Constants
+const UIElements = {
+  STATUS: 'status',
+  ERROR: 'error',
+  GET_COOKIES: 'getCookies',
+  COPY_TO_CLIPBOARD: 'copyToClipboard'
 };
 
-const MESSAGES = {
-  COPY_SUCCESS: 'Cookie успешно скопирован в буфер обмена!',
-  EMPTY_HEAP: 'Ошибка при копировании: CookiesHeap is Empty',
-  COOKIES_COUNT: (count) => `Собрано <b>${count}</b> cookies`
-};
-
-// UI Updates
-const ui = {
-  updateStatus: (status) => {
-    DOM_ELEMENTS.status.innerHTML = status;
+const Messages = {
+  SUCCESS: {
+    COPY: 'Cookie успешно скопирован в буфер обмена!',
+    COOKIES_COUNT: (count) => `Собрано <b>${count}</b> cookies`
   },
-
-  updateError: (error) => {
-    DOM_ELEMENTS.error.innerHTML = error;
-  },
-
-  clearError: () => {
-    DOM_ELEMENTS.error.innerHTML = '';
+  ERROR: {
+    EMPTY_HEAP: 'Ошибка при копировании: CookiesHeap is Empty',
+    NO_RESPONSE: 'No response or value undefined',
+    UPDATE_FAILED: 'Failed to update global variable',
+    INIT_ERROR: (message) => `Ошибка инициализации: ${message}`
   }
 };
 
-// Chrome API Wrappers
-const chromeApi = {
+// UI Manager
+class UIManager {
+  constructor() {
+    this.elements = this.initializeElements();
+  }
+
+  initializeElements() {
+    return Object.fromEntries(
+      Object.entries(UIElements).map(([key, id]) => [
+        key,
+        document.getElementById(id)
+      ])
+    );
+  }
+
+  updateStatus(status) {
+    this.elements.STATUS.innerHTML = status;
+  }
+
+  updateError(error) {
+    this.elements.ERROR.innerHTML = error;
+  }
+
+  clearError() {
+    this.elements.ERROR.innerHTML = '';
+  }
+
+  createCookieAnimation(count) {
+    const CONFIG = {
+      EMOJI: '🍪',
+      MAX_DURATION: 3600,
+      MIN_DURATION: 200,
+      DELAY_RANGE: 1000,
+      SIZE: 20
+    };
+
+    Array.from({ length: count }).forEach(() => {
+      setTimeout(() => {
+        const cookie = document.createElement('div');
+        cookie.className = 'cookie';
+        cookie.textContent = CONFIG.EMOJI;
+
+        const startX = Math.random() * (window.innerWidth - CONFIG.SIZE);
+        cookie.style.left = `${startX}px`;
+        cookie.style.top = '-20px';
+
+        document.body.appendChild(cookie);
+
+        const duration = CONFIG.MIN_DURATION + Math.random() * (CONFIG.MAX_DURATION - CONFIG.MIN_DURATION);
+
+        cookie.animate([
+          { transform: 'translateY(0) rotate(0deg)' },
+          { transform: `translateY(${window.innerHeight + CONFIG.SIZE}px) rotate(360deg)` }
+        ], {
+          duration,
+          easing: 'linear'
+        }).onfinish = () => cookie.remove();
+      }, Math.random() * CONFIG.DELAY_RANGE);
+    });
+  }
+}
+
+// Chrome API Service
+class ChromeAPIService {
   async sendMessage(message) {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(message, (response) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
-        } else {
-          resolve(response);
         }
+        resolve(response);
       });
     });
-  },
+  }
 
   async getCookiesHeap() {
     const response = await this.sendMessage({ type: "getCookiesHeap" });
     if (!response?.value) {
-      throw new Error("No response or value undefined");
+      throw new Error(Messages.ERROR.NO_RESPONSE);
     }
     return response.value;
-  },
+  }
 
   async setCookiesHeap(value) {
     const response = await this.sendMessage({
@@ -56,10 +109,10 @@ const chromeApi = {
     });
 
     if (!response?.status === "success") {
-      throw new Error("Failed to update global variable");
+      throw new Error(Messages.ERROR.UPDATE_FAILED);
     }
-    return "Global variable updated successfully";
-  },
+    return true;
+  }
 
   async getActiveTab() {
     const [tab] = await chrome.tabs.query({
@@ -67,27 +120,36 @@ const chromeApi = {
       currentWindow: true
     });
     return tab;
-  },
+  }
 
   async getCookiesForDomain(domain) {
     return chrome.cookies.getAll({ domain });
   }
-};
+}
 
-// Cookie Processing
-class CookieProcessor {
+// Cookie Manager
+class CookieManager {
+  constructor(uiManager, chromeService) {
+    this.ui = uiManager;
+    this.chrome = chromeService;
+    this.bindEventListeners();
+  }
+
+  bindEventListeners() {
+    this.ui.elements.GET_COOKIES.addEventListener('click', () => this.handleGetCookies());
+    this.ui.elements.COPY_TO_CLIPBOARD.addEventListener('click', () => this.handleCopyToClipboard());
+  }
+
   static getSubdomains(url) {
     const parts = url.hostname.split('.');
     const subdomains = new Set();
 
-    // Generate all possible subdomain combinations
     for (let i = 0; i < parts.length - 1; i++) {
       const subdomain = parts.slice(i).join('.');
       subdomains.add(subdomain);
       subdomains.add('.' + subdomain);
     }
 
-    // Add the main domain
     if (parts.length > 1) {
       const mainDomain = parts.slice(-2).join('.');
       subdomains.add(mainDomain);
@@ -105,119 +167,94 @@ class CookieProcessor {
     };
   }
 
-  static async getAllCookies(url) {
-    const domains = this.getSubdomains(url);
+  async getAllCookies(url) {
+    const domains = CookieManager.getSubdomains(url);
     const cookieMap = new Map();
 
     await Promise.all(domains.map(async (domain) => {
-      const cookies = await chromeApi.getCookiesForDomain(domain);
+      const cookies = await this.chrome.getCookiesForDomain(domain);
       cookies.forEach(cookie => {
         const key = `${cookie.name}_${cookie.domain}`;
-        cookieMap.set(key, this.cleanCookie(cookie, url));
+        cookieMap.set(key, CookieManager.cleanCookie(cookie, url));
       });
     }));
 
     return Array.from(cookieMap.values());
   }
-}
 
-// Event Handlers
-const handlers = {
+  static camelToSnake(obj) {
+    if (typeof obj !== 'object' || obj === null) return obj;
+    if (Array.isArray(obj)) return obj.map(CookieManager.camelToSnake);
+
+    return Object.fromEntries(
+      Object.entries(obj).map(([key, value]) => [
+        key.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toLowerCase(),
+        CookieManager.camelToSnake(value)
+      ])
+    );
+  }
+
   async handleGetCookies() {
     try {
-      const tab = await chromeApi.getActiveTab();
+      const tab = await this.chrome.getActiveTab();
       const url = new URL(tab.url);
+      const cookies = await this.getAllCookies(url);
+      const cookiesHeap = await this.chrome.getCookiesHeap();
 
-      const cookies = await CookieProcessor.getAllCookies(url);
-      const cookiesHeap = await chromeApi.getCookiesHeap();
-      const lengthBeforeUpdate = cookiesHeap.length;
+      const updatedHeap = this.mergeAndDedupeCookies(cookiesHeap, cookies);
 
-      cookiesHeap.push(...cookies);
-      const updatedHeapMap = new Map();
-      cookiesHeap.forEach(cookie => {
-        const key = `${cookie.name}_${cookie.domain}`;
-        updatedHeapMap.set(key, cookie);
-      });
-
-      const updatedHeap = Array.from(updatedHeapMap.values());
-      if (updatedHeap.length === lengthBeforeUpdate) {
-        return;
+      if (updatedHeap.length > cookiesHeap.length) {
+        await this.chrome.setCookiesHeap(updatedHeap);
+        this.ui.clearError();
+        this.ui.updateStatus(Messages.SUCCESS.COOKIES_COUNT(updatedHeap.length));
+        this.ui.createCookieAnimation(updatedHeap.length);
       }
-      await chromeApi.setCookiesHeap(updatedHeap);
-      ui.clearError();
-      ui.updateStatus(MESSAGES.COOKIES_COUNT(updatedHeap.length));
-      createCookieAnimation(updatedHeap.length);
     } catch (error) {
-      ui.updateError(`Ошибка: ${error.message}`);
+      this.ui.updateError(`Ошибка: ${error.message}`);
     }
-  },
+  }
+
+  mergeAndDedupeCookies(existingCookies, newCookies) {
+    const cookieMap = new Map();
+    [...existingCookies, ...newCookies].forEach(cookie => {
+      const key = `${cookie.name}_${cookie.domain}`;
+      cookieMap.set(key, cookie);
+    });
+    return Array.from(cookieMap.values());
+  }
 
   async handleCopyToClipboard() {
     try {
-      const cookiesHeap = await chromeApi.getCookiesHeap();
-
+      const cookiesHeap = await this.chrome.getCookiesHeap();
       if (cookiesHeap.length === 0) {
-        ui.updateError(MESSAGES.EMPTY_HEAP);
+        this.ui.updateError(Messages.ERROR.EMPTY_HEAP);
         return;
       }
 
-      await navigator.clipboard.writeText(JSON.stringify(cookiesHeap));
-      ui.clearError();
-      ui.updateStatus(MESSAGES.COPY_SUCCESS);
-      await chromeApi.setCookiesHeap([]);
+      const snakeCookiesHeap = CookieManager.camelToSnake(cookiesHeap);
+      await navigator.clipboard.writeText(JSON.stringify(snakeCookiesHeap));
+      this.ui.clearError();
+      this.ui.updateStatus(Messages.SUCCESS.COPY);
+      await this.chrome.setCookiesHeap([]);
     } catch (error) {
-      ui.updateError(`Ошибка при копировании: ${error.message}`);
+      this.ui.updateError(`Ошибка при копировании: ${error.message}`);
     }
   }
-};
 
-// Cookie Animation
-function createCookieAnimation(count) {
-  const cookieEmoji = '🍪';
-  const minDuration = 100;
-  const maxDuration = 4000;
-
-  for (let i = 0; i < count; i++) {
-    setTimeout(() => {
-      const cookie = document.createElement('div');
-      cookie.className = 'cookie';
-      cookie.textContent = cookieEmoji;
-
-      const startX = Math.random() * (window.innerWidth - 20);
-      cookie.style.left = startX + 'px';
-      cookie.style.top = '-20px';
-
-      document.body.appendChild(cookie);
-
-      const duration = minDuration + Math.random() * (maxDuration - minDuration);
-
-      cookie.animate([
-        { transform: 'translateY(0) rotate(0deg)' },
-        { transform: `translateY(${window.innerHeight + 20}px) rotate(360deg)` }
-      ], {
-        duration: duration,
-        easing: 'linear'
-      }).onfinish = () => {
-        cookie.remove();
-      };
-    }, Math.random() * 2000);
+  async initialize() {
+    try {
+      const cookiesHeap = await this.chrome.getCookiesHeap();
+      this.ui.updateStatus(Messages.SUCCESS.COOKIES_COUNT(cookiesHeap.length));
+    } catch (error) {
+      this.ui.updateError(Messages.ERROR.INIT_ERROR(error.message));
+    }
   }
 }
 
-// Initialize
-const initialize = async () => {
-  // Add event listeners
-  DOM_ELEMENTS.getCookies.addEventListener('click', handlers.handleGetCookies);
-  DOM_ELEMENTS.copyToClipboard.addEventListener('click', handlers.handleCopyToClipboard);
+// Application initialization
+const app = new CookieManager(
+  new UIManager(),
+  new ChromeAPIService()
+);
 
-  // Set initial status
-  try {
-    const cookiesHeap = await chromeApi.getCookiesHeap();
-    ui.updateStatus(MESSAGES.COOKIES_COUNT(cookiesHeap.length));
-  } catch (error) {
-    ui.updateError(`Ошибка инициализации: ${error.message}`);
-  }
-};
-
-// Start the application
-initialize();
+app.initialize();
