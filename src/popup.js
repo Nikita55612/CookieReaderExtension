@@ -249,8 +249,8 @@ class CookieManager {
                 return;
             }
 
-            const snakeCookiesHeap = CookieManager.camelToSnake(cookiesHeap);
-            await navigator.clipboard.writeText(JSON.stringify(snakeCookiesHeap));
+            //const snakeCookiesHeap = CookieManager.camelToSnake(cookiesHeap);
+            await navigator.clipboard.writeText(JSON.stringify(cookiesHeap));
             this.ui.clearError();
             this.ui.updateStatus(Messages.SUCCESS.COPY);
             await this.chrome.setCookiesHeap([]);
