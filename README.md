@@ -14,7 +14,7 @@
 - Распаковываем архив
 - Переходим [chrome://extensions/](chrome://extensions/)
 - Включаем режим разработчика
-- Загружаем расширение .../OzonReviewParserExtension/src
+- Загружаем расширение .../CookieReaderExtension/src
 <br>
 
 ![extensions](https://github.com/Nikita55612/OzonReviewParserExtension/blob/main/screenshots/Screenshot3.png)
